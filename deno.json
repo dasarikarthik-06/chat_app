@@ -1,0 +1,9 @@
+{
+  "tasks": {
+    "server" : "deno -A src/server.js",
+    "agent":"deno -A src/agent.js"
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1"
+  }
+}
