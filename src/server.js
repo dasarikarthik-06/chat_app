@@ -8,7 +8,7 @@ const formatMessage = (msg, name, cols) => {
   return encode(message.padStart(cols));
 };
 
-const formatLeftMessage = (msg, cols) => {
+const formatSpecialMessage = (msg, cols) => {
   const message = ` `.repeat((cols - msg.length) / 3) + msg +
     ` `.repeat(cols - msg.length) + "\n";
   return encode(message);
@@ -22,17 +22,18 @@ const readName = async (buffer, conn) => {
 
 const agentMetaData = async (buffer, conn) => {
   const bytesRead = await conn.read(buffer);
-  return decode(buffer.slice(0, bytesRead)).split(" ");
+  return decode(buffer.slice(0, bytesRead)).trim().split(" ");
 };
 
 const readMode = async (buffer, conn) => {
   const message = `👋 Welcome to the Chat App!
-  
-  What would you like to do?
+
+Please choose an option:
+
   1️⃣  Create a new room
-  🔑  Join an existing room (any other key)
-  
-  Your choice:`;
+  ➕  Join an existing room (press any other key)
+
+Your choice:`;
   await conn.write(encode(message));
   const bytesRead = await conn.read(buffer);
   const choice = decode(buffer.slice(0, bytesRead)).trim();
@@ -43,25 +44,24 @@ const readMode = async (buffer, conn) => {
 const read = async (conn) => {
   const buffer = new Uint8Array(1024);
   const [rows, cols] = await agentMetaData(buffer, conn);
-  console.log({ rows, cols });
   const mode = await readMode(buffer, conn);
   const name = await readName(buffer, conn);
-  console.log({ rows, cols, name, mode });
   return { name, rows, cols, mode };
 };
 
 const connections = {};
 
-const broadCastMessage = (connections, sender, message) => {
-  connections.forEach(async ({ name, conn, cols }, i) => {
+const broadCastMessage = async (connections, sender, message) => {
+  const entries = Object.entries(connections);
+  for (const [i, { name, conn, cols }] of entries) {
     try {
       if (conn !== sender) await conn.write(message);
     } catch {
       connections.splice(i, 1);
-      const message = formatLeftMessage(`${name} left the room`, cols);
+      const message = formatSpecialMessage(`${name} left the room`, cols);
       return broadCastMessage(connections, conn, message);
     }
-  });
+  }
 };
 
 const createRoom = () => {
@@ -71,8 +71,16 @@ const createRoom = () => {
   return groupId;
 };
 
-const joinRoom = () => {
-  console.log("JOIN ROOM");
+const joinRoom = async (conn) => {
+  const buffer = new Uint8Array(1024);
+  await conn.write(encode("Enter the group Id: "));
+  const bytesRead = await conn.read(buffer);
+  const groupId = decode(buffer.slice(0, bytesRead)).trim();
+  if (!connections[groupId]) {
+    conn.write(encode("Invalid group Id\n"));
+    return false;
+  }
+  return groupId;
 };
 
 const MODES = {
@@ -82,12 +90,22 @@ const MODES = {
 
 const handleConversation = async (conn) => {
   const { name, rows, cols, mode } = await read(conn);
-  const groupId = MODES[mode]();
-  connections[groupId].push({ name, conn, cols, rows });
-  console.log({ groupId, connections });
+  let groupId;
+  while (true) {
+    groupId = await MODES[mode](conn);
+    if (groupId) {
+      connections[groupId].push({ name, conn, cols, rows });
+      break;
+    }
+  }
+
+  console.log(connections);
+  const message = formatSpecialMessage(`${name} joined`, cols);
+  broadCastMessage(connections[groupId], conn, message);
+
   for await (const chunk of conn.readable) {
     const message = formatMessage(decode(chunk), name, cols);
-    broadCastMessage(connections, conn, message);
+    broadCastMessage(connections[groupId], conn, message);
   }
 };
 
