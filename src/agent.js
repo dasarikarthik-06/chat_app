@@ -5,24 +5,21 @@ const createConnection = async () =>
 
 const conversation = async (conn) => {
   console.clear();
-  try {
-    const { columns, rows } = Deno.consoleSize();
-    await conn.write(encode(`${rows} ${columns}`));
-    await Promise.all([
-      conn.readable.pipeTo(Deno.stdout.writable),
-      Deno.stdin.readable.pipeTo(conn.writable),
-    ]);
-  } catch (e) {
-    Deno.exit()
-  }
+  const { columns, rows } = Deno.consoleSize();
+  await conn.write(encode(`${rows} ${columns}`));
+
+  await Promise.all([
+    conn.readable.pipeTo(Deno.stdout.writable),
+    Deno.stdin.readable.pipeTo(conn.writable),
+  ]);
 };
 
 const main = async () => {
   try {
     const conn = await createConnection();
-    conversation(conn);
+    await conversation(conn);
   } catch (e) {
-    console.log(e);
+    console.log(e.message);
   }
 };
 

@@ -10,30 +10,47 @@ const formatMessage = (msg, name, cols) => {
 
 const formatLeftMessage = (msg, cols) => {
   const message = ` `.repeat((cols - msg.length) / 3) + msg +
-    ` `.repeat((cols - msg.length) / 2) + "\n";
+    ` `.repeat(cols - msg.length) + "\n";
   return encode(message);
 };
 
 const readName = async (buffer, conn) => {
   await conn.write(encode("Enter your name: "));
-  const bytesReadForName = await conn.read(buffer);
-  return decode(buffer.slice(0, bytesReadForName)).trim();
+  const bytesRead = await conn.read(buffer);
+  return decode(buffer.slice(0, bytesRead)).trim();
 };
 
-const agentConsoleSize = async (buffer, conn) => {
+const agentMetaData = async (buffer, conn) => {
   const bytesRead = await conn.read(buffer);
   return decode(buffer.slice(0, bytesRead)).split(" ");
 };
 
-const read = async (conn) => {
-  const buffer = new Uint8Array(1024);
-  const [rows, cols] = await agentConsoleSize(buffer, conn);
-  const name = await readName(buffer, conn);
-  console.log({ name, rows, cols });
-  return { name, rows, cols };
+const readMode = async (buffer, conn) => {
+  const message = `👋 Welcome to the Chat App!
+  
+  What would you like to do?
+  1️⃣  Create a new room
+  🔑  Join an existing room (any other key)
+  
+  Your choice:`;
+  await conn.write(encode(message));
+  const bytesRead = await conn.read(buffer);
+  const choice = decode(buffer.slice(0, bytesRead)).trim();
+  const mode = choice === "1" ? "create" : "join";
+  return mode;
 };
 
-const connections = [];
+const read = async (conn) => {
+  const buffer = new Uint8Array(1024);
+  const [rows, cols] = await agentMetaData(buffer, conn);
+  console.log({ rows, cols });
+  const mode = await readMode(buffer, conn);
+  const name = await readName(buffer, conn);
+  console.log({ rows, cols, name, mode });
+  return { name, rows, cols, mode };
+};
+
+const connections = {};
 
 const broadCastMessage = (connections, sender, message) => {
   connections.forEach(async ({ name, conn, cols }, i) => {
@@ -47,9 +64,27 @@ const broadCastMessage = (connections, sender, message) => {
   });
 };
 
+const createRoom = () => {
+  const groupId = Math.floor(Math.random() * 100);
+  console.log("create room");
+  connections[groupId] = [];
+  return groupId;
+};
+
+const joinRoom = () => {
+  console.log("JOIN ROOM");
+};
+
+const MODES = {
+  "create": createRoom,
+  "join": joinRoom,
+};
+
 const handleConversation = async (conn) => {
-  const { name, rows, cols } = await read(conn);
-  connections.push({ name, conn, cols, rows });
+  const { name, rows, cols, mode } = await read(conn);
+  const groupId = MODES[mode]();
+  connections[groupId].push({ name, conn, cols, rows });
+  console.log({ groupId, connections });
   for await (const chunk of conn.readable) {
     const message = formatMessage(decode(chunk), name, cols);
     broadCastMessage(connections, conn, message);
