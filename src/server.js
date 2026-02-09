@@ -64,14 +64,26 @@ const broadCastMessage = async (connections, sender, message) => {
   }
 };
 
-const createRoom = () => {
-  const groupId = Math.floor(Math.random() * 100);
+const writeGroupId = async (conn, cols, groupId) => {
+  const message = `\x1B[1m Group id: ${groupId} \x1b[0m`;
+  await conn.write(formatSpecialMessage(message, cols));
+};
+
+const createRoom = async (conn, cols) => {
+  let groupId;
+  while (true) {
+    groupId = Math.floor(Math.random() * 100);
+    if (connections[groupId] === undefined) {
+      break;
+    }
+  }
   console.log("create room");
+  await writeGroupId(conn, cols, groupId);
   connections[groupId] = [];
   return groupId;
 };
 
-const joinRoom = async (conn) => {
+const joinRoom = async (conn, cols) => {
   const buffer = new Uint8Array(1024);
   await conn.write(encode("Enter the group Id: "));
   const bytesRead = await conn.read(buffer);
@@ -80,6 +92,7 @@ const joinRoom = async (conn) => {
     conn.write(encode("Invalid group Id\n"));
     return false;
   }
+  await writeGroupId(conn, cols, groupId);
   return groupId;
 };
 
@@ -90,21 +103,26 @@ const MODES = {
 
 const handleConversation = async (conn) => {
   const { name, rows, cols, mode } = await read(conn);
-  let groupId;
-  while (true) {
-    groupId = await MODES[mode](conn);
-    if (groupId) {
-      connections[groupId].push({ name, conn, cols, rows });
-      break;
-    }
+  const groupId = await MODES[mode](conn, cols);
+
+  if (!groupId) {
+    conn.close();
+    return;
   }
+
+  connections[groupId].push({ name, conn, cols, rows });
 
   console.log(connections);
   const message = formatSpecialMessage(`${name} joined`, cols);
   broadCastMessage(connections[groupId], conn, message);
 
   for await (const chunk of conn.readable) {
-    const message = formatMessage(decode(chunk), name, cols);
+    const originalMessage = decode(chunk).trim();
+    if (originalMessage === "/exit") {
+      conn.close();
+      return;
+    }
+    const message = formatMessage(originalMessage, name, cols);
     broadCastMessage(connections[groupId], conn, message);
   }
 };
@@ -115,4 +133,5 @@ const main = async () => {
     handleConversation(conn);
   }
 };
+
 main();

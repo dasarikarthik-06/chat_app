@@ -11,16 +11,12 @@ const conversation = async (conn) => {
   await Promise.all([
     conn.readable.pipeTo(Deno.stdout.writable),
     Deno.stdin.readable.pipeTo(conn.writable),
-  ]);
+  ]).catch(() => Deno.exit());
 };
 
 const main = async () => {
-  try {
-    const conn = await createConnection();
-    await conversation(conn);
-  } catch (e) {
-    console.log(e.message);
-  }
+  const conn = await createConnection();
+  await conversation(conn);
 };
 
 main();
