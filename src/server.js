@@ -16,17 +16,16 @@ export const formatSpecialMessage = (msg, cols) => {
   return encode(message);
 };
 
-const connections = {};
 
-const broadCastMessage = async (connections, sender, message) => {
-  const entries = Object.entries(connections);
+const broadCastMessage = async (room, sender, message) => {
+  const entries = Object.entries(room);
   for (const [i, { name, conn, cols }] of entries) {
     try {
       if (conn !== sender) await conn.write(message);
     } catch {
-      connections.splice(i, 1);
+      room.splice(Number(i), 1);
       const message = formatSpecialMessage(`${name} left the room`, cols);
-      return broadCastMessage(connections, conn, message);
+      return broadCastMessage(room, conn, message);
     }
   }
 };
@@ -36,7 +35,7 @@ const MODES = {
   "join": joinRoom,
 };
 
-const handleConversation = async (conn) => {
+const handleConversation = async (connections, conn) => {
   const { name, rows, cols, mode } = await read(conn);
   const groupId = await MODES[mode](connections, conn, cols);
 
@@ -63,9 +62,10 @@ const handleConversation = async (conn) => {
 };
 
 const main = async () => {
+const connections = {};
   const listener = await createListener();
   for await (const conn of listener) {
-    handleConversation(conn);
+    handleConversation(connections, conn);
   }
 };
 
